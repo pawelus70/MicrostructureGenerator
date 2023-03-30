@@ -1,18 +1,35 @@
 import itertools
 import random
 from PIL import Image
+import os
+import subprocess
 # import numpy
 from abaqus import *
 import numpy as np
 import PySimpleGUI as sg
 import threading
-#from generatemesh import generate_mesh
+from generatemesh import generate_mesh
+from structureAnalisis import structure_analsis
 
 
 def make_win2():
     sg.theme('Dark2')
+    # layout = [[sg.Text('Start plane: '), sg.Image('start.png'), sg.Text('End plane: '), sg.Image('end.png')]]
     layout = [[sg.Text('Start plane: '), sg.Image('start.png'), sg.Text('End plane: '), sg.Image('end.png')]]
-    #layout = [[sg.Text('Start plane: '), sg.Image('start.png'), sg.Text('End plane: '), sg.Image('end.png'), sg.Text('Mesh plane: '), sg.Image('output_mesh.png')]]
+    return sg.Window('Results', layout, finalize=True)
+
+
+def make_win3():
+    sg.theme('Dark2')
+    # layout = [[sg.Text('Start plane: '), sg.Image('start.png'), sg.Text('End plane: '), sg.Image('end.png')]]
+    layout = [[sg.Text('Start plane: '), sg.Image('start.png'), sg.Text('End plane: '), sg.Image('end.png'),
+               sg.Text('Mesh plane: '), sg.Image('output_mesh.png')]]
+    return sg.Window('Results', layout, finalize=True)
+
+def make_win4():
+    sg.theme('Dark2')
+    # layout = [[sg.Text('Start plane: '), sg.Image('start.png'), sg.Text('End plane: '), sg.Image('end.png')]]
+    layout = [[sg.Text('Label plane: '), sg.Image('labeled.png')]]
     return sg.Window('Results', layout, finalize=True)
 
 
@@ -22,15 +39,17 @@ def popup(message):
     return sg.Window('Message', layout, no_titlebar=True, keep_on_top=True, finalize=True)
 
 
-def generate_ms(algorithm, random_seeds, absorbing, nbh_type_vn, empty, types_of_grain, limit_of_steps):
+def generate_ms(algorithm, random_seeds, absorbing, nbh_type_vn, empty, types_of_grain, nucleation_number, limit_of_steps):
     # Sets of colors (Can be randomized by rand, but we prefer to have max 10 types of grain)
-    pixels = [(0, 0, 0), (255, 0, 0), (0, 255, 0), (0, 0, 255), (124, 252, 0), (255, 20, 147),
-              (0, 255, 0), (255, 0, 255), (125, 255, 125), (0, 255, 255), (255, 125, 125)]
+    # FIX 10 color
+    pixels = [(0, 0, 0), (255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (0, 255, 255),
+              (255, 0, 255), (125, 125, 255), (125, 255, 125), (255, 125, 125)]
 
     # Settings of grain, size and method (max 10 types)
     types_of_grain = int(types_of_grain)
-    size_of_plane = 150
-    nucleation_number = int(np.power(size_of_plane, 2) * 0.02)
+    size_of_plane = 100
+    #nucleation_number = int(np.power(size_of_plane, 2) * 0.004)
+    nucleation_number = int(nucleation_number)
     absorbing = absorbing
     nbh_type_vn = nbh_type_vn
 
@@ -277,10 +296,10 @@ def generate_ms(algorithm, random_seeds, absorbing, nbh_type_vn, empty, types_of
                 end_pixels[x, y] = pixels[end_plane[y][x]]
 
         # Saving image
-        start_image = start_image.resize(((size_of_plane * 2), (size_of_plane * 2)), Image.NEAREST)
+        start_image = start_image.resize(((size_of_plane * 3), (size_of_plane * 3)), Image.NEAREST)
         start_image.save('start.png')
         end_image.save('genmesh.png')
-        end_image = end_image.resize(((size_of_plane * 2), (size_of_plane * 2)), Image.NEAREST)
+        end_image = end_image.resize(((size_of_plane * 3), (size_of_plane * 3)), Image.NEAREST)
         end_image.save('end.png')
 
     # Main program
@@ -299,12 +318,20 @@ def generate_ms(algorithm, random_seeds, absorbing, nbh_type_vn, empty, types_of
         return
 
     generate_image(input_plane, output)
-    #generate_mesh()
+    # generate_mesh()
     window.write_event_value('JOB DONE', None)
 
 
 # (Algorithm[CA, MC], Random nucleation?, Absorbing?, VN type?, Empty?, (int) number of grain types [max: 10], number of steps for MC)
 # generate_ms("CA", False, True, False, False, 5, 10)
+def gen_mesh():
+    generate_mesh()
+    window.write_event_value('JOB DONE MESH', None)
+
+
+def gen_struct():
+    structure_analsis()
+    window.write_event_value('JOB DONE STRUCT', None)
 
 
 sg.theme('Dark2')
@@ -316,15 +343,17 @@ layout = [[sg.Text('Parameters:')],
           [sg.Checkbox('Von Neuman', default=True, key='vn')],
           [sg.Text('Number of grain:')],
           [sg.InputText(size=15, default_text=2, key='nog')],
+          [sg.Text('Quantity of grain:')],
+          [sg.InputText(size=15, default_text=80, key='nn')],
           [sg.HorizontalSeparator()],
           [sg.Text('Settings for MC:')],
           [sg.Checkbox('Start with empty', default=True, key='emp')],
           [sg.Text('Steps:')],
           [sg.InputText(size=15, default_text=10, key='stp')],
-          [sg.Button('Proceed'), sg.Button('Show latest results'), sg.Button('Cancel')]]
+          [sg.Button('Proceed'), sg.Button('Results'), sg.Button('GenMesh'), sg.Button('GenStruct')]]
 
 # Create the Window
-window = sg.Window('Microstructure maker', layout, size=(300, 400), element_justification='c')
+window = sg.Window('Microstructure maker', layout, size=(300, 450), element_justification='c')
 # Event Loop to process "events" and get the "values" of the inputs
 while True:
     event, values = window.read()
@@ -333,15 +362,29 @@ while True:
     elif event == 'Proceed':
         # generate_ms(algorithm, random_seeds, absorbing, nbh_type_vn, empty, types_of_grain, limit_of_steps)
         popup_w = popup('Please wait...')
-        threading.Thread(target=generate_ms, args=(values['met'], values['rand'], values['abs'], values['vn'], values['emp'], values['nog'],values['stp']), daemon=True).start()
-        #generate_ms(values['met'], values['rand'], values['abs'], values['vn'], values['emp'], values['nog'],
-                    #values['stp'])
+        threading.Thread(target=generate_ms, args=(
+        values['met'], values['rand'], values['abs'], values['vn'], values['emp'], values['nog'], values['nn'], values['stp']),
+                         daemon=True).start()
+        # generate_ms(values['met'], values['rand'], values['abs'], values['vn'], values['emp'], values['nog'],
+        # values['stp'])
     elif event == 'JOB DONE':
         popup_w.close()
         window2 = make_win2()
-    elif event == 'Show latest results':
-        window2 = make_win2()
-    print('You entered ', values['met'], values['rand'], values['abs'], values['vn'], values['nog'], values['emp'],
+    elif event == 'JOB DONE MESH':
+        popup_w.close()
+        window3 = make_win3()
+    elif event == 'JOB DONE STRUCT':
+        popup_w.close()
+        window4 = make_win4()
+    elif event == 'GenMesh':
+        popup_w = popup('Please wait...')
+        threading.Thread(target=gen_mesh, args=(), daemon=True).start()
+    elif event == 'GenStruct':
+        popup_w = popup('Please wait...')
+        threading.Thread(target=gen_struct, args=(), daemon=True).start()
+    elif event == 'Results':
+        window3 = make_win3()
+    print('You entered ', values['met'], values['rand'], values['abs'], values['vn'], values['nog'], values['nn'], values['emp'],
           values['stp'])
 
 window.close()
